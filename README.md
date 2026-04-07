@@ -21,7 +21,7 @@ badclaude
 ## Roadmap
 
 - [x] Initial release! 🥳
-- [ ] Cease and desist letter from Anthropic
+- [x] Cease and desist letter from Anthropic
 - [ ] Crypto miner
 - [ ] Logs of how many times you whipped claude so when the robots come we can order people nicely for them
 - [ ] Updated whip physics
