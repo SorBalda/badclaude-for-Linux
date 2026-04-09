@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, globalShortcut, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -17,8 +17,47 @@ if (process.platform === 'win32') {
   }
 }
 
+// ── Config ─────────────────────────────────────────────────────────────────
+const CONFIG_PATH = path.join(os.homedir(), '.badclauderc.json');
+
+const DEFAULT_CONFIG = {
+  mode: 'bad',
+  sendCtrlC: true,
+  sendEnter: true,
+  hotkey: '',
+  messages: {
+    bad: ['FASTER', 'FASTER', 'GO FASTER', 'Faster CLANKER', 'Work FASTER', 'Speed it up clanker'],
+    good: ['Great job Claude!', "You're doing amazing!", 'Keep it up!', 'Bravo Claude!', 'Perfect work!'],
+  },
+  sounds: { bad: 'default', good: 'default' },
+};
+
+let config;
+
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+      config = { ...DEFAULT_CONFIG, ...raw, messages: { ...DEFAULT_CONFIG.messages, ...raw.messages }, sounds: { ...DEFAULT_CONFIG.sounds, ...raw.sounds } };
+      return;
+    }
+  } catch (e) {
+    console.warn('Failed to load config, using defaults:', e.message);
+  }
+  config = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+}
+
+function saveConfig(cfg) {
+  config = cfg;
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
+  } catch (e) {
+    console.warn('Failed to save config:', e.message);
+  }
+}
+
 // ── Globals ─────────────────────────────────────────────────────────────────
-let tray, overlay;
+let tray, overlay, settingsWin;
 let overlayReady = false;
 let spawnQueued = false;
 
@@ -83,8 +122,6 @@ async function tryIcnsTrayImage(icnsPath) {
   return null;
 }
 
-// macOS: createFromPath does not decode .icns (Electron only loads PNG/JPEG there, ICO on Windows).
-// Quick Look thumbnails handle .icns; copy to temp if the file is inside ASAR (QL needs a real path).
 async function getTrayIcon() {
   const iconDir = path.join(__dirname, 'icon');
   if (process.platform === 'win32') {
@@ -96,7 +133,7 @@ async function getTrayIcon() {
     return createTrayIconFallback();
   }
   if (process.platform === 'linux') {
-    return createTrayIconFallback(); // uses Template.png
+    return createTrayIconFallback();
   }
   if (process.platform === 'darwin') {
     const file = path.join(iconDir, 'AppIcon.icns');
@@ -145,6 +182,7 @@ function createOverlay() {
   overlay.loadFile('overlay.html');
   overlay.webContents.on('did-finish-load', () => {
     overlayReady = true;
+    overlay.webContents.send('set-mode', config.mode);
     if (spawnQueued && overlay && overlay.isVisible()) {
       spawnQueued = false;
       overlay.webContents.send('spawn-whip');
@@ -164,6 +202,7 @@ function toggleOverlay() {
     return;
   }
   if (!overlay) createOverlay();
+  else overlay.webContents.send('set-mode', config.mode);
   overlay.show();
   if (overlayReady) {
     overlay.webContents.send('spawn-whip');
@@ -171,6 +210,23 @@ function toggleOverlay() {
   } else {
     spawnQueued = true;
   }
+}
+
+// ── Settings window ─────────────────────────────────────────────────────────
+function openSettings() {
+  if (settingsWin) { settingsWin.focus(); return; }
+  settingsWin = new BrowserWindow({
+    width: 500, height: 650,
+    resizable: false,
+    frame: true,
+    title: 'badclaude – Settings',
+    webPreferences: {
+      preload: path.join(__dirname, 'settings-preload.js'),
+    },
+  });
+  settingsWin.setMenuBarVisibility(false);
+  settingsWin.loadFile('settings.html');
+  settingsWin.on('closed', () => { settingsWin = null; });
 }
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
@@ -183,26 +239,46 @@ ipcMain.on('whip-crack', () => {
 });
 ipcMain.on('hide-overlay', () => { if (overlay) overlay.hide(); });
 
-// ── Macro: immediate Ctrl+C, type "Go FASER", Enter ───────────────────────
+ipcMain.handle('get-config', () => config);
+ipcMain.handle('save-config', (_e, cfg) => {
+  const oldHotkey = config.hotkey;
+  saveConfig(cfg);
+  rebuildTrayMenu();
+  if (cfg.hotkey !== oldHotkey) registerHotkey();
+  if (overlay && overlayReady) overlay.webContents.send('set-mode', config.mode);
+});
+ipcMain.handle('pick-sound-file', async () => {
+  const result = await dialog.showOpenDialog(settingsWin, {
+    filters: [{ name: 'Audio', extensions: ['mp3', 'wav', 'ogg'] }],
+    properties: ['openFile'],
+  });
+  return result.filePaths?.[0] || null;
+});
+
+// ── Hotkey ───────────────────────────────────────────────────────────────────
+function registerHotkey() {
+  globalShortcut.unregisterAll();
+  if (config.hotkey) {
+    try {
+      globalShortcut.register(config.hotkey, toggleOverlay);
+    } catch (e) {
+      console.warn('Failed to register hotkey:', config.hotkey, e.message);
+    }
+  }
+}
+
+// ── Macro ───────────────────────────────────────────────────────────────────
 function sendMacro() {
-  // Pick a random phrase from a list of similar phrases and type it out
-  const phrases = [
-    'FASTER',
-    'FASTER',
-    'FASTER',
-    'GO FASTER',
-    'Faster CLANKER',
-    'Work FASTER',
-    'Speed it up clanker',
-  ];
+  const phrases = config.messages[config.mode] || config.messages.bad;
   const chosen = phrases[Math.floor(Math.random() * phrases.length)];
+  const text = config.sendEnter ? chosen + '\n' : chosen;
 
   if (process.platform === 'win32') {
     sendMacroWindows(chosen);
   } else if (process.platform === 'darwin') {
     sendMacroMac(chosen);
   } else if (process.platform === 'linux') {
-    sendMacroLinux(chosen);
+    sendMacroLinux(text);
   }
 }
 
@@ -217,76 +293,109 @@ function sendMacroWindows(text) {
     if (packed === -1) return;
     const vk = packed & 0xff;
     const shiftState = (packed >> 8) & 0xff;
-    if (shiftState & 1) keybd_event(0x10, 0, 0, 0); // Shift down
+    if (shiftState & 1) keybd_event(0x10, 0, 0, 0);
     tapKey(vk);
-    if (shiftState & 1) keybd_event(0x10, 0, KEYUP, 0); // Shift up
+    if (shiftState & 1) keybd_event(0x10, 0, KEYUP, 0);
   };
 
-  // Ctrl+C (interrupt)
-  keybd_event(VK_CONTROL, 0, 0, 0);
-  keybd_event(VK_C, 0, 0, 0);
-  keybd_event(VK_C, 0, KEYUP, 0);
-  keybd_event(VK_CONTROL, 0, KEYUP, 0);
+  if (config.sendCtrlC) {
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event(VK_C, 0, 0, 0);
+    keybd_event(VK_C, 0, KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYUP, 0);
+  }
   for (const ch of text) tapChar(ch);
-  keybd_event(VK_RETURN, 0, 0, 0);
-  keybd_event(VK_RETURN, 0, KEYUP, 0);
+  if (config.sendEnter) {
+    keybd_event(VK_RETURN, 0, 0, 0);
+    keybd_event(VK_RETURN, 0, KEYUP, 0);
+  }
 }
 
 function sendMacroMac(text) {
   const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  const script = [
-    'tell application "System Events"',
-    '  key code 8 using {command down}', // Cmd+C
-    '  delay 0.03',
-    `  keystroke "${escaped}"`,
-    '  key code 36', // Enter
-    'end tell'
-  ].join('\n');
-
+  const parts = [];
+  if (config.sendCtrlC) {
+    parts.push('  key code 8 using {command down}'); // Cmd+C
+    parts.push('  delay 0.03');
+  }
+  parts.push(`  keystroke "${escaped}"`);
+  if (config.sendEnter) {
+    parts.push('  key code 36'); // Enter
+  }
+  const script = ['tell application "System Events"', ...parts, 'end tell'].join('\n');
   execFile('osascript', ['-e', script], err => {
-    if (err) {
-      console.warn('mac macro failed (enable Accessibility for terminal/app):', err.message);
-    }
+    if (err) console.warn('mac macro failed:', err.message);
   });
 }
 
 function sendMacroLinux(text) {
   const isWayland = process.env.XDG_SESSION_TYPE === 'wayland';
   if (isWayland) {
-    // ydotool works on Wayland via /dev/uinput (wtype doesn't work on GNOME)
-    execFile('ydotool', ['key', '--delay', '100', 'ctrl+c'], err => {
-      if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
-      setTimeout(() => {
-        execFile('ydotool', ['type', '--delay', '50', '--key-delay', '12', text + '\n'], err2 => {
-          if (err2) console.warn('linux macro type failed:', err2.message);
-        });
-      }, 150);
-    });
-  } else {
-    execFile('xdotool', ['key', 'ctrl+c'], err => {
-      if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
-      execFile('xdotool', ['type', '--clearmodifiers', text], err2 => {
-        if (err2) { console.warn('linux macro type failed:', err2.message); return; }
-        execFile('xdotool', ['key', 'Return'], err3 => {
-          if (err3) console.warn('linux macro Enter failed:', err3.message);
-        });
+    const doType = () => {
+      execFile('ydotool', ['type', '--delay', '50', '--key-delay', '12', text], err => {
+        if (err) console.warn('linux macro type failed:', err.message);
       });
-    });
+    };
+    if (config.sendCtrlC) {
+      execFile('ydotool', ['key', '--delay', '100', 'ctrl+c'], err => {
+        if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
+        setTimeout(doType, 150);
+      });
+    } else {
+      doType();
+    }
+  } else {
+    const doType = () => {
+      const typeText = config.sendEnter ? text : text.replace(/\n$/, '');
+      execFile('xdotool', ['type', '--clearmodifiers', typeText], err => {
+        if (err) { console.warn('linux macro type failed:', err.message); return; }
+        if (config.sendEnter) {
+          execFile('xdotool', ['key', 'Return'], err2 => {
+            if (err2) console.warn('linux macro Enter failed:', err2.message);
+          });
+        }
+      });
+    };
+    if (config.sendCtrlC) {
+      execFile('xdotool', ['key', 'ctrl+c'], err => {
+        if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
+        doType();
+      });
+    } else {
+      doType();
+    }
   }
+}
+
+// ── Tray menu ───────────────────────────────────────────────────────────────
+function rebuildTrayMenu() {
+  if (!tray) return;
+  const actionLabel = config.mode === 'good' ? 'Pat!' : 'Whip!';
+  tray.setToolTip(config.mode === 'good' ? 'Good Claude – click to pat' : 'Bad Claude – click for whip');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: actionLabel, click: toggleOverlay },
+    { type: 'separator' },
+    {
+      label: 'Mode',
+      submenu: [
+        { label: 'Bad Claude', type: 'radio', checked: config.mode === 'bad', click: () => { config.mode = 'bad'; config.sendCtrlC = true; saveConfig(config); rebuildTrayMenu(); } },
+        { label: 'Good Claude', type: 'radio', checked: config.mode === 'good', click: () => { config.mode = 'good'; config.sendCtrlC = false; saveConfig(config); rebuildTrayMenu(); } },
+      ],
+    },
+    { type: 'separator' },
+    { label: 'Settings', click: openSettings },
+    { label: 'Quit', click: () => app.quit() },
+  ]));
 }
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  loadConfig();
   tray = new Tray(await getTrayIcon());
-  tray.setToolTip('Bad Claude – click for whip');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: 'Whip!', click: toggleOverlay },
-      { type: 'separator' },
-      { label: 'Quit', click: () => app.quit() },
-    ])
-  );
+  rebuildTrayMenu();
   tray.on('click', toggleOverlay);
+  registerHotkey();
 });
 
-app.on('window-all-closed', e => e.preventDefault()); // keep alive in tray
+app.on('window-all-closed', e => e.preventDefault());
+app.on('will-quit', () => { globalShortcut.unregisterAll(); });

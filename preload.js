@@ -5,4 +5,5 @@ contextBridge.exposeInMainWorld('bridge', {
   hideOverlay: () => ipcRenderer.send('hide-overlay'),
   onSpawnWhip: (fn) => ipcRenderer.on('spawn-whip', () => fn()),
   onDropWhip: (fn) => ipcRenderer.on('drop-whip', () => fn()),
+  onSetMode: (fn) => ipcRenderer.on('set-mode', (_e, mode) => fn(mode)),
 });

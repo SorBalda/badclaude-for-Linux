@@ -32,7 +32,9 @@
   "files": [
     "main.js",
     "preload.js",
+    "settings-preload.js",
     "overlay.html",
+    "settings.html",
     "sounds",
     "icon",
     "bin/badclaude.js",
