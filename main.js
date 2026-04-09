@@ -52,6 +52,12 @@ function refocusPreviousApp() {
           console.warn('refocus previous app (Cmd+Tab) failed:', err.message);
         }
       });
+    } else if (process.platform === 'linux') {
+      execFile('xdotool', ['key', 'alt+Tab'], err => {
+        if (err) {
+          console.warn('refocus previous app (Alt+Tab) failed:', err.message);
+        }
+      });
     }
   };
   setTimeout(run, delayMs);
@@ -88,6 +94,9 @@ async function getTrayIcon() {
       if (!img.isEmpty()) return img;
     }
     return createTrayIconFallback();
+  }
+  if (process.platform === 'linux') {
+    return createTrayIconFallback(); // uses Template.png
   }
   if (process.platform === 'darwin') {
     const file = path.join(iconDir, 'AppIcon.icns');
@@ -192,6 +201,8 @@ function sendMacro() {
     sendMacroWindows(chosen);
   } else if (process.platform === 'darwin') {
     sendMacroMac(chosen);
+  } else if (process.platform === 'linux') {
+    sendMacroLinux(chosen);
   }
 }
 
@@ -239,12 +250,39 @@ function sendMacroMac(text) {
   });
 }
 
+function sendMacroLinux(text) {
+  const isWayland = process.env.XDG_SESSION_TYPE === 'wayland';
+  if (isWayland) {
+    // ydotool works on Wayland via /dev/uinput (wtype doesn't work on GNOME)
+    execFile('ydotool', ['key', '--delay', '100', 'ctrl+c'], err => {
+      if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
+      setTimeout(() => {
+        execFile('ydotool', ['type', '--delay', '50', '--key-delay', '12', text + '\n'], err2 => {
+          if (err2) console.warn('linux macro type failed:', err2.message);
+        });
+      }, 150);
+    });
+  } else {
+    execFile('xdotool', ['key', 'ctrl+c'], err => {
+      if (err) { console.warn('linux macro Ctrl+C failed:', err.message); return; }
+      execFile('xdotool', ['type', '--clearmodifiers', text], err2 => {
+        if (err2) { console.warn('linux macro type failed:', err2.message); return; }
+        execFile('xdotool', ['key', 'Return'], err3 => {
+          if (err3) console.warn('linux macro Enter failed:', err3.message);
+        });
+      });
+    });
+  }
+}
+
 // ── App lifecycle ───────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   tray = new Tray(await getTrayIcon());
   tray.setToolTip('Bad Claude – click for whip');
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      { label: 'Whip!', click: toggleOverlay },
+      { type: 'separator' },
       { label: 'Quit', click: () => app.quit() },
     ])
   );

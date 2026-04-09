@@ -6,8 +6,20 @@ Sometimes claude code is going too shlow, and you must whip him into shape..
 
 ## Install + run
 
+### macOS / Windows
 ```bash
 npm install -g badclaude
+badclaude
+```
+
+### Linux (Wayland / X11)
+```bash
+# Prerequisites (Wayland only - needed for keyboard simulation)
+sudo apt install ydotool
+sudo chmod 0666 /dev/uinput   # or: sudo usermod -aG input $USER && logout/login
+
+# Install & run
+npm install -g github:SorBalda/badclaude
 badclaude
 ```
 

@@ -12,7 +12,7 @@ try {
 
 const appPath = path.resolve(__dirname, '..');
 
-const child = spawn(electronBinary, [appPath], {
+const child = spawn(electronBinary, ['--no-sandbox', appPath], {
   detached: true,
   stdio: 'ignore',
   windowsHide: true,

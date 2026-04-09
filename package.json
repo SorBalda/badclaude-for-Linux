@@ -1,6 +1,6 @@
 {
   "name": "badclaude",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Whip Claude into shape",
   "license": "MIT",
   "main": "main.js",
@@ -9,7 +9,8 @@
   },
   "os": [
     "darwin",
-    "win32"
+    "win32",
+    "linux"
   ],
   "engines": {
     "node": ">=18.0.0"
@@ -22,12 +23,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GitFrog1111/badclaude.git"
+    "url": "git+https://github.com/SorBalda/badclaude.git"
   },
   "bugs": {
-    "url": "https://github.com/GitFrog1111/badclaude/issues"
+    "url": "https://github.com/SorBalda/badclaude/issues"
   },
-  "homepage": "https://github.com/GitFrog1111/badclaude#readme",
+  "homepage": "https://github.com/SorBalda/badclaude#readme",
   "files": [
     "main.js",
     "preload.js",
@@ -43,7 +44,9 @@
     "pack": "npm pack"
   },
   "dependencies": {
-    "electron": "^33.0.0",
+    "electron": "^33.0.0"
+  },
+  "optionalDependencies": {
     "koffi": "^2.9.0"
   }
 }
