@@ -19,7 +19,7 @@ sudo apt install ydotool
 sudo chmod 0666 /dev/uinput   # or: sudo usermod -aG input $USER && logout/login
 
 # Install & run
-npm install -g github:SorBalda/badclaude
+npm install -g github:SorBalda/badclaude-for-Linux
 badclaude
 ```
 

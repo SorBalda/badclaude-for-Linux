@@ -23,12 +23,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/SorBalda/badclaude.git"
+    "url": "git+https://github.com/SorBalda/badclaude-for-Linux.git"
   },
   "bugs": {
-    "url": "https://github.com/SorBalda/badclaude/issues"
+    "url": "https://github.com/SorBalda/badclaude-for-Linux/issues"
   },
-  "homepage": "https://github.com/SorBalda/badclaude#readme",
+  "homepage": "https://github.com/SorBalda/badclaude-for-Linux#readme",
   "files": [
     "main.js",
     "preload.js",
